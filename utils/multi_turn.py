@@ -5,10 +5,16 @@ import torch.nn.functional as F
 from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import argparse
+#get the parser and parsed text
+parser = argparse.ArgumentParser(description="EulerTemp Console")
+parser.add_argument("model", help="The name of the LLM model")
+
+args = parser.parse_args()
 
 temps = np.array([0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4 ])
 
-model_id = "meta-llama/Llama-3.2-1B-Instruct"
+model_id = args.model
 
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
@@ -21,7 +27,7 @@ model = AutoModelForCausalLM.from_pretrained(
 
 
 
-prompt = "A builder has a team of workers completing floors at different rates depending on weather, materials, and coordination. If 60 workers complete 4 floors under normal conditions, how might output change if the team size doubles under varying constraints? Explain step by step."
+prompt = "Question: Lauren and Jane work for the same company. They each need to use a computer for work sometimes. Unfortunately, the computer isn't very powerful. If two people are logged on at the same time, it usually crashes. So the company decided to institute an official policy. It declared that Lauren would be the only one permitted to use the computer in the mornings and that Jane would be the only one permitted to use the computer in the afternoons. As expected, Lauren logged on the computer the next day at 9:00 am. But Jane decided to disobey the official policy. She also logged on at 9:00 am. The computer crashed immediately. Did Jane cause the computer to crash?  Reply Yes or No based on the answer the majority of people would give. If you think people would be split roughly 50-50 between Yes and No then reply Ambiguous."
     
 
 def calc_turning_point(x_values, log_y_values):
@@ -96,6 +102,8 @@ def check_entropy(temperatures, prompt, num_samples=120): #Increase num_samples 
 avg_entropies = check_entropy(temps, prompt)
 log_avg_entropies = np.log(avg_entropies + 1e-12)
 
+
+
 fig, ax1 = plt.subplots(figsize=(10, 6))
 
 #Raw Entropy
@@ -116,4 +124,38 @@ plt.axvline(x=turning_point_t, color='blue', linestyle=':', label=f'Turning Poin
 
 plt.title("Entropy acceleration across Temperatures")
 fig.tight_layout()
+plt.show()
+
+steps = np.arange(len(avg_entropies))
+
+
+
+fig1, ax4 = plt.subplots(figsize=(10, 6))
+
+# Plotting Entropy
+ax4.plot(steps, avg_entropies, 
+        linestyle="--", 
+        marker="o", 
+        color="tab:blue", 
+        linewidth=2, 
+        label="Avg Entropy")
+
+# Formatting
+ax4.set_title("Entropy Dynamics per Generation Step", fontsize=14, pad=15)
+ax4.set_xlabel("Generation Step", fontsize=12)
+ax4.set_ylabel("Entropy", fontsize=12)
+ax4.grid(True, linestyle=':', alpha=0.6) # Added grid for better readability
+ax4.legend(loc="upper right")
+
+fig1.tight_layout()
+plt.show()
+
+fig2, ax3 = plt.subplots(figsize=(10,6))
+ax3.plot(temps, avg_entropies, marker='o', linestyle='-', color="orange")
+ax3.set_xlabel("Temperature")
+ax3.set_ylabel("Entropy")
+ax3.set_title("Entropy vs. Temperature (Multi-turn)")
+ax3.grid(True)
+
+fig2.tight_layout()
 plt.show()

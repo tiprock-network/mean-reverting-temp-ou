@@ -80,16 +80,33 @@ entropy_curve, temp_curve = multi_turn_ou_tracking(prompt)
 
 steps = np.arange(len(entropy_curve))
 
-fig, ax1 = plt.subplots(figsize=(10,6))
 
-ax1.plot(steps, entropy_curve, linestyle="--", marker="o", label="Avg Entropy")
+
+fig1, ax1 = plt.subplots(figsize=(10,6))
+ax1.plot(steps, entropy_curve, linestyle="--", marker="o", color="tab:blue", label="Avg Entropy")
 ax1.set_xlabel("Generation Step")
-ax1.set_ylabel("Entropy")
+ax1.set_ylabel("Entropy", color="tab:blue")
+ax1.tick_params(axis='y', labelcolor="tab:blue")
 
 ax2 = ax1.twinx()
-ax2.plot(steps, temp_curve, linestyle="-", marker="s", label="Avg Temperature")
-ax2.set_ylabel("Temperature")
+ax2.plot(steps, temp_curve, linestyle="-", marker="s", color="tab:red", label="Avg Temperature")
+ax2.set_ylabel("Temperature", color="tab:red")
+ax2.tick_params(axis='y', labelcolor="tab:red")
+
+lines_1, labels_1 = ax1.get_legend_handles_labels()
+lines_2, labels_2 = ax2.get_legend_handles_labels()
+ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper left")
 
 plt.title("OU (Euler-Maruyama) Multi-turn Avg Temperature & Entropy Dynamics")
-fig.tight_layout()
+fig1.tight_layout()
+plt.show()
+
+fig2, ax3 = plt.subplots(figsize=(10,6))
+ax3.plot(temp_curve, entropy_curve, marker='o', linestyle='-', color="purple")
+ax3.set_xlabel("Temperature")
+ax3.set_ylabel("Entropy")
+ax3.set_title("Entropy vs. Temperature")
+ax3.grid(True)
+
+fig2.tight_layout()
 plt.show()
