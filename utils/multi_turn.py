@@ -1,14 +1,19 @@
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn.functional as F
-from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import argparse
+from pathlib import Path
+
 #get the parser and parsed text
 parser = argparse.ArgumentParser(description="EulerTemp Console")
 parser.add_argument("model", help="The name of the LLM model")
+parser.add_argument("--num_samples", type=int, default=120, help="Number of generations per temperature")
+parser.add_argument("--max_new_tokens", type=int, default=100, help="Generated tokens per sample")
+parser.add_argument("--save_dir", type=str, default="outputs/figures", help="Directory to save plots")
+parser.add_argument("--show", action="store_true", help="Display plots interactively")
 
 args = parser.parse_args()
 
@@ -18,12 +23,19 @@ model_id = args.model
 
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-model = AutoModelForCausalLM.from_pretrained(
-    
-    model_id,
-    dtype=torch.bfloat16,
-    device_map="auto"
-)
+if torch.cuda.is_available():
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    )
+else:
+    model = AutoModelForCausalLM.from_pretrained(model_id)
+
+model.eval()
+
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision("high")
 
 
 
@@ -65,7 +77,7 @@ def calc_turning_point(x_values, log_y_values):
 
 
 
-def check_entropy(temperatures, prompt, num_samples=120): #Increase num_samples for smoother results
+def check_entropy(temperatures, prompt, num_samples=120, max_new_tokens=100): #Increase num_samples for smoother results
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     mean_entropies = []
 
@@ -74,24 +86,26 @@ def check_entropy(temperatures, prompt, num_samples=120): #Increase num_samples 
         
         # PAPER ALIGNMENT: Average over multiple generations to find the "Expected" entropy
 
-        for _ in range(num_samples):
-            outputs = model.generate(
-                **inputs,
-                temperature=temp,
-                do_sample=True,
-                max_new_tokens=100,
-                return_dict_in_generate=True,
-                output_scores=True
-            )
-            
-            current_sequence_entropies = []
-            for step_logits in outputs.scores:
-                probs = F.softmax(step_logits, dim=-1)
-                # Use a larger top-k or full vocab for the entropy sum
-                entropy = -(probs * torch.log(probs + 1e-12)).sum(dim=-1)
-                current_sequence_entropies.append(entropy.item())
-            
-            sample_entropies.append(np.mean(current_sequence_entropies))
+        with torch.inference_mode():
+            for _ in range(num_samples):
+                outputs = model.generate(
+                    **inputs,
+                    temperature=temp,
+                    do_sample=True,
+                    max_new_tokens=max_new_tokens,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                    use_cache=True,
+                )
+
+                current_sequence_entropies = []
+                for step_logits in outputs.scores:
+                    probs = F.softmax(step_logits, dim=-1)
+                    # Use a larger top-k or full vocab for the entropy sum
+                    entropy = -(probs * torch.log(probs + 1e-12)).sum(dim=-1)
+                    current_sequence_entropies.append(entropy.item())
+
+                sample_entropies.append(np.mean(current_sequence_entropies))
         
         #Average the means of all samples for this temperature
         mean_entropies.append(np.mean(sample_entropies))
@@ -99,8 +113,15 @@ def check_entropy(temperatures, prompt, num_samples=120): #Increase num_samples 
     return np.array(mean_entropies)
 
 #Execute
-avg_entropies = check_entropy(temps, prompt)
+avg_entropies = check_entropy(
+    temps,
+    prompt,
+    num_samples=args.num_samples,
+    max_new_tokens=args.max_new_tokens,
+)
 log_avg_entropies = np.log(avg_entropies + 1e-12)
+save_dir = Path(args.save_dir)
+save_dir.mkdir(parents=True, exist_ok=True)
 
 
 
@@ -124,7 +145,11 @@ plt.axvline(x=turning_point_t, color='blue', linestyle=':', label=f'Turning Poin
 
 plt.title("Entropy acceleration across Temperatures")
 fig.tight_layout()
-plt.show()
+fig.savefig(save_dir / "multi_turn_entropy_acceleration.png", dpi=200)
+if args.show:
+    plt.show()
+else:
+    plt.close(fig)
 
 steps = np.arange(len(avg_entropies))
 
@@ -148,7 +173,11 @@ ax4.grid(True, linestyle=':', alpha=0.6) # Added grid for better readability
 ax4.legend(loc="upper right")
 
 fig1.tight_layout()
-plt.show()
+fig1.savefig(save_dir / "multi_turn_entropy_dynamics.png", dpi=200)
+if args.show:
+    plt.show()
+else:
+    plt.close(fig1)
 
 fig2, ax3 = plt.subplots(figsize=(10,6))
 ax3.plot(temps, avg_entropies, marker='o', linestyle='-', color="orange")
@@ -158,4 +187,8 @@ ax3.set_title("Entropy vs. Temperature (Multi-turn)")
 ax3.grid(True)
 
 fig2.tight_layout()
-plt.show()
+fig2.savefig(save_dir / "multi_turn_entropy_vs_temperature.png", dpi=200)
+if args.show:
+    plt.show()
+else:
+    plt.close(fig2)

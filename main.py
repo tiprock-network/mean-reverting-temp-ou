@@ -1,7 +1,5 @@
 import argparse
 import torch
-import torch.nn.functional as F
-import numpy as np
 import random
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -18,7 +16,17 @@ from colorama import init, Fore, Style
 
 model_id = args.model
 tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(model_id).to("cuda" if torch.cuda.is_available() else "cpu")
+
+if torch.cuda.is_available():
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    )
+else:
+    model = AutoModelForCausalLM.from_pretrained(model_id)
+
+model.eval()
 
 # Initialize colorama for Windows compatibility
 init(autoreset=True)

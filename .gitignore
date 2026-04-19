@@ -1,1 +1,3 @@
 .venv
+slurm_logs/
+slurm_script/

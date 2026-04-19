@@ -12,16 +12,12 @@ def adaptive_generation_em(model, tokenizer, prompt, max_new_tokens=100):
     """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-    base_outputs = model.generate(
-        **inputs,
-        temperature=0.2,
-        do_sample=True,
-        max_new_tokens=1,
-        return_dict_in_generate=True,
-        output_scores=True
-    )
+    with torch.inference_mode():
+        base_outputs = model(**inputs, use_cache=True)
 
-    ref_logits = base_outputs.scores[0]
+    ref_logits = base_outputs.logits[:, -1, :]
+    current_logits = ref_logits
+    past_key_values = base_outputs.past_key_values
 
     T = 0.4
     mu = 0.4
@@ -42,11 +38,10 @@ def adaptive_generation_em(model, tokenizer, prompt, max_new_tokens=100):
         T = ou_euler_maruyama(T, mu, theta, sigma, dt)
         T = float(np.clip(T, 0.1, 1.5))
 
-        outputs = model(input_ids=generated)
-        logits = outputs.logits[:, -1, :] / T
+        logits = current_logits / T
 
-        entropy = compute_entropy(logits).item()
-        kl = compute_kl(logits, ref_logits).item()
+        entropy = float(compute_entropy(logits).item())
+        kl = float(compute_kl(logits, ref_logits).item())
 
         if entropy < entropy_low:
             mu += 0.02
@@ -61,6 +56,15 @@ def adaptive_generation_em(model, tokenizer, prompt, max_new_tokens=100):
         next_token = torch.multinomial(probs, num_samples=1)
 
         generated = torch.cat([generated, next_token], dim=-1)
+
+        with torch.inference_mode():
+            outputs = model(
+                input_ids=next_token,
+                past_key_values=past_key_values,
+                use_cache=True,
+            )
+        current_logits = outputs.logits[:, -1, :]
+        past_key_values = outputs.past_key_values
 
         entropies.append(entropy)
         temperatures.append(T)
@@ -106,41 +110,49 @@ class AdaptiveOUInference:
         if "<|eot_id|>" in self.tokenizer.get_vocab():
             stop_tokens.append(self.tokenizer.convert_tokens_to_ids("<|eot_id|>"))
         
-        # Get reference logits from the initial prompt
-        with torch.no_grad():
-            ref_logits = self.model(**inputs).logits[:, -1, :]
+        # Get reference logits and cache from the initial prompt in one forward pass.
+        with torch.inference_mode():
+            init_outputs = self.model(**inputs, use_cache=True)
+
+        ref_logits = init_outputs.logits[:, -1, :]
+        current_logits = ref_logits
+        past_key_values = init_outputs.past_key_values
 
         for _ in range(max_tokens):
             self._ou_step() # Evolve T based on current state
 
-            with torch.no_grad():
-                # Pass the full sequence through the model
-                
-                outputs = self.model(input_ids=generated)
-                logits = outputs.logits[:, -1, :]
-                
-                # APPLY THE TEMPERATURE
-                scaled_logits = logits / self.T
-                
-                # Feedback Loop: Calculate metrics
-                entropy = compute_entropy(scaled_logits)
-                kl = compute_kl(scaled_logits, ref_logits)
+            # Apply current temperature to the cached current-step logits.
+            scaled_logits = current_logits / self.T
 
-                # ADJUST STATE: Update mu and theta based on metrics
-                self._adjust_parameters(entropy, kl)
+            entropy = float(compute_entropy(scaled_logits).item())
+            kl = float(compute_kl(scaled_logits, ref_logits).item())
 
-                # Sample next token
-                probs = F.softmax(scaled_logits, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
-                # Check if the sampled token is a stop token
-                if next_token.item() in stop_tokens:
-                    break
-                generated = torch.cat([generated, next_token], dim=-1)
-                
-                # Track for visualization
-                self.history["temp"].append(self.T)
-                self.history["entropy"].append(entropy)
-                self.history["mu"].append(self.mu)
+            # ADJUST STATE: Update mu and theta based on metrics
+            self._adjust_parameters(entropy, kl)
+
+            # Sample next token
+            probs = F.softmax(scaled_logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            if next_token.item() in stop_tokens:
+                break
+
+            generated = torch.cat([generated, next_token], dim=-1)
+
+            with torch.inference_mode():
+                outputs = self.model(
+                    input_ids=next_token,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+
+            current_logits = outputs.logits[:, -1, :]
+            past_key_values = outputs.past_key_values
+
+            # Track for visualization
+            self.history["temp"].append(self.T)
+            self.history["entropy"].append(entropy)
+            self.history["mu"].append(self.mu)
 
         return self.tokenizer.decode(generated[0], skip_special_tokens=True)
 
@@ -226,32 +238,43 @@ class AdaptiveOUExact:
         if "<|eot_id|>" in self.tokenizer.get_vocab():
             stop_tokens.append(self.tokenizer.convert_tokens_to_ids("<|eot_id|>"))
 
-        with torch.no_grad():
-            ref_logits = self.model(**inputs).logits[:, -1, :]
+        with torch.inference_mode():
+            init_outputs = self.model(**inputs, use_cache=True)
+
+        ref_logits = init_outputs.logits[:, -1, :]
+        current_logits = ref_logits
+        past_key_values = init_outputs.past_key_values
 
         for _ in range(max_tokens):
             self._ou_step()
 
-            with torch.no_grad():
-                outputs = self.model(input_ids=generated)
-                logits = outputs.logits[:, -1, :]
-                scaled_logits = logits / self.T
+            scaled_logits = current_logits / self.T
 
-                entropy = compute_entropy(scaled_logits)
-                kl = compute_kl(scaled_logits, ref_logits)
+            entropy = float(compute_entropy(scaled_logits).item())
+            kl = float(compute_kl(scaled_logits, ref_logits).item())
 
-                self._adjust_parameters(entropy, kl)
+            self._adjust_parameters(entropy, kl)
 
-                probs = F.softmax(scaled_logits, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
+            probs = F.softmax(scaled_logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
 
-                if next_token.item() in stop_tokens:
-                    break
+            if next_token.item() in stop_tokens:
+                break
 
-                generated = torch.cat([generated, next_token], dim=-1)
+            generated = torch.cat([generated, next_token], dim=-1)
 
-                self.history["temp"].append(self.T)
-                self.history["entropy"].append(entropy)
-                self.history["mu"].append(self.mu)
+            with torch.inference_mode():
+                outputs = self.model(
+                    input_ids=next_token,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+
+            current_logits = outputs.logits[:, -1, :]
+            past_key_values = outputs.past_key_values
+
+            self.history["temp"].append(self.T)
+            self.history["entropy"].append(entropy)
+            self.history["mu"].append(self.mu)
 
         return self.tokenizer.decode(generated[0], skip_special_tokens=True)
