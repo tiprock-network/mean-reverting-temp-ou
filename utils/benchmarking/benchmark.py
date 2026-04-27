@@ -263,11 +263,16 @@ def main():
     print(f"Loading model: {args.model}")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-    )
+    if device == "cuda":
+        torch.set_float32_matmul_precision("high")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(args.model)
+
     model.eval()
     print(f"Model loaded on {device}.\n")
 

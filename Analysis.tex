@@ -1,0 +1,69 @@
+\section{Plain OU Baseline Results Across Models and Datasets}
+
+We conducted plain OU baseline experiments across 9 model/dataset pairs. The table below summarizes the average entropy and average temperature observed for each combination:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{l l l l}
+        \toprule
+        Model & Dataset & Avg. Entropy & Avg. Temperature \\
+        \midrule
+        Llama-3.2-1B-Instruct & BBH & 1.334 & 1.010 \\
+        Llama-3.2-1B-Instruct & Causal Judgement & 1.444 & 0.988 \\
+        Llama-3.2-1B-Instruct & GMASK & 1.030 & 1.025 \\
+        Llama-3-8B-Instruct & BBH & 1.211 & 0.974 \\
+        Llama-3-8B-Instruct & GMASK & 1.351 & 1.003 \\
+        Llama-2-7B-Instruct & BBH & 1.214 & 0.986 \\
+        Llama-2-7B-Instruct & Causal Judgement & 1.632 & 0.996 \\
+        Llama-2-7B-Instruct & GMASK & 0.909 & 0.972 \\
+        Llama-3.8B-Instruct & Causal Judgement & 0.709 & 1.000 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Summary of plain OU baseline results: average entropy and temperature for each model/dataset pair.}
+\end{table}
+
+\subsection{Summary and Insights}
+
+The results show that average entropy and temperature values vary across both models and datasets. Notably:
+\begin{itemize}
+    \item The Causal Judgement dataset generally yields higher entropy, especially for Llama-2-7B-Instruct.
+    \item The GMASK dataset produces lower entropy for Llama-2-7B-Instruct, indicating more deterministic outputs.
+    \item Average temperature remains close to 1.0 for all runs, confirming the stability of the OU controller.
+    \item Llama-3.2-1B-Instruct and Llama-3-8B-Instruct show moderate entropy across datasets, with BBH and Causal Judgement yielding higher diversity than GMASK.
+\end{itemize}
+
+These findings provide a baseline for evaluating adaptive and TURN temperature controllers. The entropy and temperature values here serve as reference points for assessing the effectiveness of more advanced control strategies.
+\section{Multi-Turn Entropy/Temperature Analysis}
+
+To calibrate temperature control for our experiments, we performed a multi-turn entropy analysis across a range of fixed temperatures using the selected LLMs. This analysis helps identify the ``elbow'' point---the temperature at which entropy (output diversity) begins to increase rapidly. This point is critical for setting baseline and adaptive temperature parameters for all subsequent experiments.
+
+\subsection{Methodology}
+We swept the temperature parameter from low to high values and measured the average entropy of the model's output at each setting. The results were visualized using several diagnostic plots:
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/multiturn_entropy_temp_dynamics.png}
+    \caption{OU (Euler-Maruyama) Multi-turn Average Temperature and Entropy Dynamics.}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/entropy_vs_temperature.png}
+    \caption{Entropy vs. Temperature curve. The ``elbow'' indicates the onset of high-entropy (diverse) generations.}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/entropy_acceleration.png}
+    \caption{Entropy acceleration across temperatures. The dotted line marks the elbow region.}
+\end{figure}
+
+\subsection{Findings}
+The analysis revealed a clear elbow in the entropy vs. temperature curve at $T \approx 1.0$. Below this value, entropy increases slowly; above it, entropy rises rapidly, indicating a transition to highly diverse (and less reliable) outputs. This elbow point was used to set:
+\begin{itemize}
+    \item The fixed temperature for TURN (elbow) baseline experiments.
+    \item The initial and mean temperature ($T_{init}$, $\mu$) for OU and Adaptive OU controllers.
+    \item The entropy thresholds for Adaptive OU ($[1.0, 2.0]$).
+\end{itemize}
+
+This calibration ensures that all temperature control methods are compared fairly and operate in the most informative regime for the selected models and datasets.
