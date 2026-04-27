@@ -43,16 +43,72 @@ This produces adaptive exploration without unbounded drift.
 
 ## Repository Structure
 
-- `main.py`: interactive CLI chat loop with adaptive OU temperature control.
-- `utils/ou_eulerm.py`: core controllers.
-	- `AdaptiveOUInference`: Euler-Maruyama OU update.
-	- `AdaptiveOUExact`: exact OU transition update.
-- `utils/math_functions.py`: entropy, KL, and OU helper math.
-- `utils/benchmarking/benchmark.py`: benchmark runner on ARC-Challenge,
-	TruthfulQA-MC1, and MMLU.
-- `utils/multi_turn.py`: entropy-vs-temperature and turning-point analysis.
-- `utils/simulations/`: standalone simulation scripts.
-- `figures/`: generated example plots.
+- `main.py`: Interactive CLI chat loop with adaptive OU temperature control.
+- `config.yaml`: Central config for model, dataset, temperature, and experiment parameters.
+- `utils/ou_eulerm.py`: Core controllers (OU, Adaptive OU, OU+KL).
+- `utils/math_functions.py`: Entropy, KL, and OU helper math.
+- `utils/benchmarking/benchmark.py`: Benchmark runner (now supports GSM8K, BBH, Causal Judgement, ARC, TruthfulQA, MMLU).
+- `utils/multi_turn.py`: Entropy-vs-temperature and turning-point analysis.
+- `utils/simulations/`: Standalone simulation scripts:
+    - `ou_plain.py`: Plain OU (no feedback)
+    - `ou_adaptive.py`: Adaptive OU (entropy feedback)
+    - `turn_fixed.py`: TURN (fixed temperature baseline)
+- `figures/`: Generated example plots.
+- `outputs/figures/`: Output directory for metrics and plots.
+
+## Workflow: Reproducible Experiments
+
+All experiments are configured via `config.yaml` and results are logged to JSON in `outputs/figures/`.
+
+### 1. Multi-turn entropy/temperature analysis
+
+Run:
+```bash
+python utils/multi_turn.py meta-llama/Llama-3.2-1B-Instruct
+```
+This produces:
+- Entropy and temperature dynamics plots
+- Entropy vs. temperature curve
+- Entropy acceleration (elbow) plot
+
+**Purpose:** Use these plots to set the elbow temperature and entropy thresholds in `config.yaml` for all subsequent experiments.
+
+### 2. Plain OU, Adaptive OU, and TURN Baselines
+
+Run (all use config.yaml for parameters):
+```bash
+python utils/simulations/ou_plain.py
+python utils/simulations/ou_adaptive.py
+python utils/simulations/turn_fixed.py
+```
+Each script logs metrics (entropy, temperature, output text) to JSON in `outputs/figures/`.
+
+### 3. Full Benchmarking
+
+Run:
+```bash
+python -m utils.benchmarking.benchmark --model <model_id> --output outputs/figures/benchmark_results.json
+```
+This evaluates the selected model and temperature controller on GSM8K, BBH, Causal Judgement, ARC, TruthfulQA, and MMLU (as configured).
+
+### 4. Interactive Demo
+
+```bash
+python main.py meta-llama/Llama-3.2-1B-Instruct
+```
+Type `exit` to quit.
+
+## Multi-Turn Analysis Example
+
+See `Analysis.tex` for a sample writeup and example plots from the multi-turn analysis. This step is critical for calibrating temperature and entropy thresholds for all experiments.
+
+## Supported Datasets and Models
+
+You can switch between:
+- Datasets: GSM8K (`openai/gsm8k`), BBH (`BBEH/bbeh`), Causal Judgement (`allenanie/causal_judgment`), ARC, TruthfulQA, MMLU
+- Models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Meta-Llama-3-8B-Instruct, Qwen/Qwen2-7B-Instruct
+
+Edit `config.yaml` to change models, datasets, or experiment parameters.
 
 ## Reproducible Setup
 

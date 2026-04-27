@@ -1,7 +1,10 @@
 # Experiment configuration for OU, Adaptive OU, and TURN baselines
 
 model: meta-llama/Llama-3.2-1B-Instruct
-benchmark_dataset: GSM8K  # Options: GSM8K, BBH, CausalJudgement
+benchmark_dataset:
+  name: lighteval/gmask
+  split: validation  # or the appropriate split for your loader
+  # Options: GSM8K, BBH, CausalJudgement
 prompt: |
   A builder has a team of workers completing floors at different rates depending on weather, materials, and coordination. If 60 workers complete 4 floors under normal conditions, how might output change if the team size doubles under varying constraints? Explain step by step.
 
@@ -11,7 +14,6 @@ num_samples: 50
 save_dir: outputs/figures
 
 # OU process parameters
-
 ou:
   T_init: 1.0
   mu: 1.0
